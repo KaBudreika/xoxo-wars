@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="lt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>XOXO Wars prototipas</title>
+<style>
+  :root {
+    --paper: #fbf8f1;
+    --grid: #b9cfe6;
+    --ink: #1b1b1f;
+    --x: #1f4fd1;
+    --o: #d1291f;
+    --muted: #6b6b75;
+    --win: #ffe27a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.4 -apple-system, system-ui, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 16px;
+  }
+  h1 { font-size: 22px; margin: 4px 0 12px; letter-spacing: 1px; }
+  h1 .x { color: var(--x); } h1 .o { color: var(--o); }
+  .screen { width: 100%; max-width: 480px; display: none; flex-direction: column; align-items: center; gap: 12px; }
+  .screen.on { display: flex; }
+  button {
+    font: inherit; font-weight: 600; border: 2px solid var(--ink); background: #fff;
+    border-radius: 10px; padding: 12px 18px; width: 100%; cursor: pointer;
+  }
+  button.primary { background: var(--ink); color: #fff; }
+  button:disabled { opacity: .4; }
+  .sizes { display: flex; gap: 8px; width: 100%; }
+  .sizes button { padding: 10px 0; }
+  .sizes button.sel { background: var(--ink); color: #fff; }
+  .muted { color: var(--muted); font-size: 14px; text-align: center; }
+  .warn { color: var(--o); font-size: 14px; text-align: center; }
+  #qr svg { width: 240px; height: 240px; display: block; }
+  #link { font-size: 12px; word-break: break-all; color: var(--muted); text-align: center; }
+  .bar { width: 100%; display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+  .score { font-size: 20px; }
+  .score .x { color: var(--x); } .score .o { color: var(--o); }
+  #status { min-height: 24px; font-weight: 600; text-align: center; }
+  #board {
+    display: grid; width: 100%; aspect-ratio: 1; touch-action: manipulation;
+    border-top: 1px solid var(--grid); border-left: 1px solid var(--grid);
+  }
+  .cell { border-right: 1px solid var(--grid); border-bottom: 1px solid var(--grid); position: relative; }
+  .cell.win { background: var(--win); }
+  .cell.last { box-shadow: inset 0 0 0 2px rgba(0,0,0,.15); }
+  .cell svg { position: absolute; inset: 10%; width: 80%; height: 80%; overflow: visible; }
+  .cell svg path, .cell svg ellipse { fill: none; stroke-width: 9; stroke-linecap: round; }
+  .cell.X svg path { stroke: var(--x); }
+  .cell.O svg ellipse { stroke: var(--o); }
+  .row { display: flex; gap: 8px; width: 100%; }
+  /* Turn signal: board glows and the status pill pulses in the player's colour */
+  body.my-turn #board { animation: glow 1.2s ease-in-out infinite; }
+  body.my-turn #status {
+    background: var(--me); color: #fff; padding: 4px 14px; border-radius: 999px;
+    animation: beat 1.2s ease-in-out infinite;
+  }
+  @keyframes glow { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 5px var(--me); } }
+  @keyframes beat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+  .cell.ping { animation: ping .9s ease-out 2; }
+  @keyframes ping { 0% { background: var(--win); } 100% { background: transparent; } }
+  #chat { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+  #chat-log {
+    max-height: 160px; min-height: 60px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+    border: 1px solid var(--grid); border-radius: 10px; padding: 8px; background: #fff;
+  }
+  .msg { max-width: 80%; padding: 6px 10px; border-radius: 12px; word-wrap: break-word; font-size: 15px; }
+  .msg.me { align-self: flex-end; background: var(--ink); color: #fff; }
+  .msg.them { align-self: flex-start; background: #ece8de; }
+  #chat-form { display: flex; gap: 8px; }
+  #chat-input { flex: 1; font: inherit; padding: 10px 12px; border: 2px solid var(--ink); border-radius: 10px; min-width: 0; }
+  #chat-form button { width: auto; }
+</style>
+</head>
+<body>
+<h1><span class="x">X</span><span class="o">O</span><span class="x">X</span><span class="o">O</span> WARS</h1>
+
+<!-- Lobby: host picks a mode -->
+<section class="screen on" id="s-lobby">
+  <p class="muted">Penki iš eilės. Prototipas.</p>
+  <button class="primary" id="b-host">Žaisti su draugu (QR kodas)</button>
+  <button id="b-local">Žaisti viename telefone</button>
+</section>
+
+<!-- Host waiting for guest -->
+<section class="screen" id="s-wait">
+  <p>Duok draugui nuskenuoti:</p>
+  <div id="qr"></div>
+  <div id="link"></div>
+  <button class="primary" id="b-share">Siųsti nuorodą draugui</button>
+  <p class="warn" id="lan-warn" hidden>Atidarei per localhost. Telefonas šios nuorodos neatidarys. Atidaryk puslapį per kompiuterio IP adresą.</p>
+  <p class="muted" id="wait-status">Ruošiama...</p>
+  <button id="b-cancel">Atgal</button>
+</section>
+
+<!-- Guest connecting -->
+<section class="screen" id="s-join">
+  <p id="join-status">Jungiamasi prie draugo...</p>
+</section>
+
+<!-- Game -->
+<section class="screen" id="s-game">
+  <div class="bar">
+    <span id="who"></span>
+    <span class="score"><span class="x">X</span> <span id="sx">0</span> : <span id="so">0</span> <span class="o">O</span></span>
+  </div>
+  <div id="status"></div>
+  <div id="board"></div>
+  <div class="sizes" id="sizes">
+    <button data-size="6">6x6</button>
+    <button data-size="9">9x9</button>
+    <button data-size="12">12x12</button>
+  </div>
+  <div class="row">
+    <button class="primary" id="b-again" hidden>Dar kartą</button>
+  </div>
+  <p class="muted" id="stats"></p>
+  <div id="chat" hidden>
+    <div id="chat-log"><span class="muted" id="chat-empty">Parašyk draugui...</span></div>
+    <form id="chat-form" autocomplete="off">
+      <input id="chat-input" maxlength="200" placeholder="Žinutė">
+      <button class="primary" type="submit">Siųsti</button>
+    </form>
+  </div>
+</section>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script type="module">
+import { newRound, play } from './game.js';
+
+const $ = id => document.getElementById(id);
+const show = id => document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
+
+// Session state. The host (or the local device) owns it; the guest only renders copies.
+// mode: 'local' | 'host' | 'guest'
+let mode = null;
+let peer = null;
+let conn = null;
+let session = null; // { round, score: {X, O}, rounds, size }
+let myMark = null;  // 'X' on host, 'O' on guest, null in local mode
+
+function startSession(size) {
+  session = { round: newRound(size, 'X'), score: { X: 0, O: 0, draw: 0 }, rounds: 0, size };
+}
+
+function nextRound(size) {
+  const starter = session.round.starter === 'X' ? 'O' : 'X';
+  session.size = size;
+  session.round = newRound(size, starter);
+}
+
+// ---- Authority: only local and host modes mutate the session ----
+function applyMove(index, mark) {
+  const next = play(session.round, index, mark);
+  if (!next) return;
+  session.round = next;
+  if (next.winner) {
+    session.rounds++;
+    session.score[next.winner]++;
+  }
+  session.lastMove = index;
+  broadcast();
+  render();
+}
+
+function applyAgain(size) {
+  if (!session.round.winner) return;
+  nextRound(size ?? session.size);
+  session.lastMove = null;
+  broadcast();
+  render();
+}
+
+function applySize(size) {
+  // Size changes only before the first move of a round.
+  if (session.round.moves > 0 && !session.round.winner) return;
+  if (session.round.winner) return applyAgain(size);
+  session.size = size;
+  session.round = newRound(size, session.round.starter);
+  broadcast();
+  render();
+}
+
+// ---- Chat: messages go peer to peer, they are not part of the game session ----
+function addMessage(text, mine) {
+  $('chat-empty')?.remove();
+  const el = document.createElement('div');
+  el.className = 'msg ' + (mine ? 'me' : 'them');
+  el.textContent = text;
+  const log = $('chat-log');
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
+function onChatMessage(text) {
+  addMessage(text, false);
+  if (navigator.vibrate) navigator.vibrate(30);
+}
+
+$('chat-form').onsubmit = e => {
+  e.preventDefault();
+  const text = $('chat-input').value.trim().slice(0, 200);
+  if (!text || !conn?.open) return;
+  conn.send({ t: 'chat', text });
+  addMessage(text, true);
+  $('chat-input').value = '';
+};
+
+function broadcast() {
+  if (mode === 'host' && conn?.open) conn.send({ t: 'state', session });
+}
+
+// ---- Input ----
+function onCell(index) {
+  const r = session.round;
+  if (r.winner) return;
+  if (mode === 'local') return applyMove(index, r.turn);
+  if (r.turn !== myMark) return;
+  if (mode === 'host') return applyMove(index, myMark);
+  conn.send({ t: 'move', index });
+}
+
+function onSize(size) {
+  if (mode === 'guest') return conn.send({ t: 'size', size });
+  applySize(size);
+}
+
+function onAgain() {
+  if (mode === 'guest') return conn.send({ t: 'again' });
+  applyAgain();
+}
+
+// ---- Rendering ----
+const X_SVG = '<svg viewBox="0 0 100 100"><path d="M14 12 C40 40 62 64 88 90"/><path d="M86 14 C60 38 38 62 12 86"/></svg>';
+const O_SVG = '<svg viewBox="0 0 100 100"><ellipse cx="50" cy="51" rx="38" ry="40" transform="rotate(-8 50 50)"/></svg>';
+
+// ---- Turn signal: flash the opponent's move, buzz, beep, blink the tab title ----
+let wasMyTurn = false;
+let audio = null;
+let titleTimer = null;
+const TITLE = document.title;
+
+function beep() {
+  try {
+    audio ??= new AudioContext();
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    osc.frequency.value = 660;
+    gain.gain.setValueAtTime(0.15, audio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.25);
+    osc.connect(gain).connect(audio.destination);
+    osc.start();
+    osc.stop(audio.currentTime + 0.25);
+  } catch {}
+}
+
+function signalTurn() {
+  const last = session.lastMove;
+  if (last != null) {
+    const cell = $('board').children[last];
+    cell.classList.remove('ping');
+    void cell.offsetWidth; // restart the animation
+    cell.classList.add('ping');
+  }
+  if (navigator.vibrate) navigator.vibrate([60, 60, 60]);
+  beep();
+  if (document.hidden && !titleTimer) {
+    titleTimer = setInterval(() => {
+      document.title = document.title === TITLE ? 'Tavo ėjimas!' : TITLE;
+    }, 800);
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && titleTimer) {
+    clearInterval(titleTimer);
+    titleTimer = null;
+    document.title = TITLE;
+  }
+});
+
+let renderedSize = 0;
+function render() {
+  show('s-game');
+  const r = session.round;
+  const board = $('board');
+  if (renderedSize !== r.size) {
+    board.style.gridTemplateColumns = `repeat(${r.size}, 1fr)`;
+    board.innerHTML = '';
+    for (let i = 0; i < r.size * r.size; i++) {
+      const c = document.createElement('div');
+      c.className = 'cell';
+      c.addEventListener('pointerdown', () => onCell(i));
+      c.addEventListener('animationend', () => c.classList.remove('ping'));
+      board.appendChild(c);
+    }
+    renderedSize = r.size;
+  }
+  const win = new Set(r.line);
+  [...board.children].forEach((c, i) => {
+    const m = r.cells[i];
+    const cls = 'cell' + (m ? ' ' + m : '') + (win.has(i) ? ' win' : '') + (session.lastMove === i ? ' last' : '')
+      + (c.classList.contains('ping') ? ' ping' : '');
+    if (c.className !== cls) {
+      c.className = cls;
+      c.innerHTML = m === 'X' ? X_SVG : m === 'O' ? O_SVG : '';
+    }
+  });
+
+  $('sx').textContent = session.score.X;
+  $('so').textContent = session.score.O;
+  $('who').textContent = mode === 'local' ? 'Viename telefone' : `Tu esi ${myMark}`;
+  $('chat').hidden = mode === 'local';
+
+  let status;
+  if (r.winner === 'draw') status = 'Lygiosios';
+  else if (r.winner) status = mode === 'local' ? `${r.winner} laimėjo` : r.winner === myMark ? 'Tu laimėjai' : 'Draugas laimėjo';
+  else if (mode === 'local') status = `Ėjimas: ${r.turn}`;
+  else status = r.turn === myMark ? 'Tavo ėjimas' : 'Draugo ėjimas';
+  $('status').textContent = status;
+
+  const canResize = !r.moves || r.winner;
+  document.querySelectorAll('#sizes button').forEach(b => {
+    b.classList.toggle('sel', +b.dataset.size === r.size);
+    b.disabled = !canResize;
+  });
+  $('b-again').hidden = !r.winner;
+
+  const myTurn = mode !== 'local' && !r.winner && r.turn === myMark;
+  document.body.classList.toggle('my-turn', myTurn);
+  document.body.style.setProperty('--me', myMark === 'O' ? 'var(--o)' : 'var(--x)');
+  if (myTurn && !wasMyTurn) signalTurn();
+  wasMyTurn = myTurn;
+
+  const secs = Math.round(((r.endedAt ?? Date.now()) - r.startedAt) / 1000);
+  $('stats').textContent = r.winner
+    ? `Partija: ${r.moves} ėjimai, ${Math.floor(secs / 60)} min ${secs % 60} s. Sesijoje sužaista: ${session.rounds}.`
+    : `Sesijoje sužaista: ${session.rounds}`;
+}
+
+// ---- Networking (PeerJS, browser to browser) ----
+function shortId() {
+  const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let s = '';
+  for (let i = 0; i < 6; i++) s += abc[Math.floor(Math.random() * abc.length)];
+  return 'xoxowars-' + s;
+}
+
+function hostGame() {
+  mode = 'host';
+  myMark = 'X';
+  show('s-wait');
+  const id = shortId();
+  const url = `${location.origin}${location.pathname}?join=${id.slice(9)}`;
+  $('lan-warn').hidden = !['localhost', '127.0.0.1'].includes(location.hostname);
+  const qr = qrcode(0, 'M');
+  qr.addData(url);
+  qr.make();
+  $('qr').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+  $('link').textContent = url;
+
+  peer = new Peer(id);
+  peer.on('open', () => { $('wait-status').textContent = 'Laukiama draugo...'; });
+  peer.on('error', e => { $('wait-status').textContent = 'Ryšio klaida: ' + e.type; });
+  peer.on('connection', c => {
+    if (conn?.open) return c.close(); // one guest per session
+    conn = c;
+    c.on('open', () => {
+      if (!session) startSession(9);
+      broadcast();
+      render();
+    });
+    c.on('data', msg => {
+      if (msg.t === 'move') applyMove(msg.index, 'O');
+      else if (msg.t === 'again') applyAgain();
+      else if (msg.t === 'size') applySize(msg.size);
+      else if (msg.t === 'chat') onChatMessage(String(msg.text).slice(0, 200));
+    });
+    c.on('close', () => { $('status').textContent = 'Draugas atsijungė'; });
+  });
+}
+
+function joinGame(code) {
+  mode = 'guest';
+  myMark = 'O';
+  show('s-join');
+  peer = new Peer();
+  peer.on('error', e => { $('join-status').textContent = 'Nepavyko prisijungti: ' + e.type; });
+  peer.on('open', () => {
+    conn = peer.connect('xoxowars-' + code, { reliable: true });
+    conn.on('data', msg => {
+      if (msg.t === 'chat') return onChatMessage(String(msg.text).slice(0, 200));
+      if (msg.t !== 'state') return;
+      session = msg.session;
+      render();
+    });
+    conn.on('close', () => { $('status').textContent = 'Draugas atsijungė'; });
+  });
+}
+
+// ---- Wiring ----
+$('b-local').onclick = () => { mode = 'local'; myMark = null; startSession(9); render(); };
+$('b-host').onclick = hostGame;
+$('b-cancel').onclick = () => { peer?.destroy(); peer = null; show('s-lobby'); };
+$('b-again').onclick = onAgain;
+$('b-share').onclick = async () => {
+  const url = $('link').textContent;
+  // Phones open the share sheet (Messenger, WhatsApp, SMS). Desktop copies to the clipboard.
+  if (navigator.share) {
+    try { await navigator.share({ title: 'XOXO Wars', text: 'Sužaiskim penkis iš eilės:', url }); return; } catch {}
+  }
+  try { await navigator.clipboard.writeText(url); $('b-share').textContent = 'Nuoroda nukopijuota'; } catch {}
+};
+document.querySelectorAll('#sizes button').forEach(b => b.onclick = () => onSize(+b.dataset.size));
+setInterval(() => { if (session && !session.round.winner && $('s-game').classList.contains('on')) render(); }, 1000);
+
+const join = new URLSearchParams(location.search).get('join');
+if (join) joinGame(join);
+
+// Test hook for automated checks.
+window.__xoxo = { get session() { return session; }, get mode() { return mode; } };
+</script>
+</body>
+</html>
